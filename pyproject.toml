@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "tontine"
+version = "0.1.0"
+description = ""
+authors = ["Othman El Hammouchi <othman.el.hammouchi@protonmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+numpy = "^2.0.1"
+scipy = "^1.14.0"
+sympy = "^1.13.1"
+ipython = "^8.26.0"
+ipykernel = "^6.29.5"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
