@@ -22,7 +22,7 @@ res = minimize(
         LinearConstraint(np.ones((4,)), 1, 1),
     ],
     jac=jac,
-    tol=1e-20,
+    tol=1e-10,
     options={"disp": True, "maxiter": int(1e4), "initial_constr_penalty": 10},
 )
 
