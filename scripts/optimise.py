@@ -3,27 +3,27 @@ import numpy as np
 import pandas as pd
 import os
 
-from tontine.portfolio import objective
-from tontine.payoffs import Context
-from tontine.jacobian import DerivativeHelper, jac_factory
+from tontine.portfolio import Portfolio
+from tontine.data import MarketData, MortalityData
+
 
 survival_curve = pd.read_excel(os.path.join("data", "AG2022prob.xlsx"))
-context = Context(0.85, 1e5, 0.02, survival_curve, 10, 0.04, 0.10, 0.15, 0.5)
-helper = DerivativeHelper(context)
+# TODO: internalise the fact that the time parameter is not allowed to be zero
+# because it breaks the log-normal distribution
+survival_curve = survival_curve[survival_curve["t"] > 0]
 
-jac = jac_factory(context, helper)
+mort_data = MortalityData(0.04, survival_curve)
+mkt_data = MarketData(0.08, 0.10, 0.5)
 
-res = minimize(
-    lambda x: -objective(x, context),
-    np.array([0.1, 0.1, 0.4, 0.4]),
-    method="trust-constr",
-    constraints=[
-        LinearConstraint(np.eye(4), np.zeros(4)),
-        LinearConstraint(np.ones((4,)), 1, 1),
-    ],
-    jac=jac,
-    tol=1e-10,
-    options={"disp": True, "maxiter": int(1e4), "initial_constr_penalty": 10},
-)
+risk_loadings = {
+    "annuity": 0.02,
+    "tontine": 0.02,
+    "ul_tontine": 0.02,
+    "ul_annuity": 0.02,
+}
+
+ptfl = Portfolio(1e5, 10, 0.85, risk_loadings, mkt_data, mort_data)
+
+res = ptfl.optimise()
 
 print(res)

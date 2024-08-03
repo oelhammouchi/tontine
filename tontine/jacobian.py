@@ -2,7 +2,7 @@ from sympy import *
 from sympy.utilities.autowrap import autowrap, binary_function
 import numpy as np
 
-from .payoffs import Context
+from .instruments import Context
 
 n, k, r, t, v, C, T = symbols("n k r t v C T")
 w1, w2, w3, w4 = symbols("w1:5")
@@ -10,37 +10,6 @@ gamma, lamda, mu, sigma, xi = symbols("gamma lambda mu sigma xi")
 # p_x = Function("p_x")
 p_x = IndexedBase("p_x")
 w = Matrix([w1, w2, w3, w4])
-
-
-def fia(w1):
-    return (w1 * v / (1 + C)) * (1 / (Sum(exp(-r * t) * p_x[t], (t, 0, T))))
-
-
-def uia(w2):
-    v0 = w2 * v / ((1 + C) * Sum(p_x[t], (t, 0, T)))
-    return v0 * exp((r + (mu - r) * xi - 0.5 * gamma * sigma**2 * xi**2) * t)
-
-
-def tto(w3):
-    return (w3 * v / (1 + C)) * (
-        1 / (Sum(exp(-r * t) * (1 - (1 - p_x[t]) ** n), (t, 0, T)))
-    )
-
-
-def uto(w4):
-    v0 = w4 * v / ((1 + C) * Sum(1 - (1 - p_x[t]) ** n, (t, 0, T)))
-    return v0 * exp((r + (mu - r) * xi - 0.5 * gamma * sigma**2 * xi**2) * t)
-
-
-summand = (
-    binomial(n - 1, k)
-    * p_x[t] ** (k + 1)
-    * (1 - p_x[t]) ** (n - 1 - k)
-    * (1 / (1 - gamma))
-    * (fia(w1) + uia(w2) + tto(w3) + uto(w4)) ** (1 - gamma)
-)
-
-f = Sum(exp(-r * t) * Sum(summand, (k, 0, n - 1)), (t, 0, T))  # objective function
 
 
 class DerivativeHelper:
