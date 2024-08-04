@@ -24,6 +24,7 @@ remote-pdb = "^2.1.0"
 ipdb = "^0.13.13"
 py-spy = "^0.3.14"
 tqdm = "^4.66.4"
+seaborn = "^0.13.2"
 
 
 [build-system]

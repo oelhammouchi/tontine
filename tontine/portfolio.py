@@ -1,10 +1,13 @@
 import numpy as np
 from scipy.special import binom
 from scipy.integrate import dblquad
-from scipy.optimize import minimize, LinearConstraint
+from scipy.optimize import minimize, LinearConstraint, OptimizeResult
 from sympy import binomial
 import multiprocessing
 from tqdm import tqdm
+import seaborn as sns
+import pandas as pd
+from copy import copy
 
 from .utils import kappa
 from .data import MarketData, MortalityData
@@ -34,7 +37,7 @@ class ProgressCallBack:
         self.n_iter = n_iter
         self.ctr = 0
 
-    def __call__(self, xk):
+    def __call__(self, intermediate_result: OptimizeResult):
         self.tqdm.update()
         self.ctr += 1
         if self.ctr >= self.n_iter:
@@ -42,185 +45,171 @@ class ProgressCallBack:
 
 
 class LagrangianIntegrand:
-    def __init__(
-        self, n: int, p: np.ndarray, γ: float, annuity, tontine, ul_annuity, ul_tontine
-    ):
-        self.n = n
-        self.p = p
-        self.γ = γ
-
-        self.annuity = annuity
-        self.tontine = tontine
-        self.ul_annuity = ul_annuity
-        self.ul_tontine = ul_tontine
+    def __init__(self, ptfl: "Portfolio"):
+        self.ptfl = ptfl
 
     def __call__(self, x: float, y: float, t: float, w: np.ndarray = None):
-        k = np.arange(0, self.n)
-        p = self.p[self.annuity.t == t]
+        k = np.arange(0, self.ptfl.n)
+        p = self.ptfl.p[self.ptfl.annuity.t == t]
 
         return (
             np.sum(
-                binom(self.n - 1, k)
+                binom(self.ptfl.n - 1, k)
                 * u(
-                    (k + 1) * w[0] * self.annuity.c
-                    + w[1] * self.tontine.d * self.n
-                    + w[2] * x * (k + 1)
-                    + w[3] * y * self.n,
-                    self.γ,
+                    (k + 1) * self.ptfl.annuity.c
+                    + self.ptfl.tontine.d * self.ptfl.n
+                    + x * (k + 1)
+                    + y * self.ptfl.n,
+                    self.ptfl.γ,
                 )
                 * p**k
-                * (1 - p) ** (self.n - 1 - k)
+                * (1 - p) ** (self.ptfl.n - 1 - k)
             )
-            * self.ul_annuity.psi_dist(t, x)
-            * self.ul_tontine.psi_dist(t, y)
+            * self.ptfl.ul_annuity.psi_dist(t, x)
+            * self.ptfl.ul_tontine.psi_dist(t, y)
         )
 
 
 class dLdw1Integrand:
-    def __init__(
-        self, n: int, p: np.ndarray, γ: float, annuity, tontine, ul_annuity, ul_tontine
-    ):
-        self.n = n
-        self.p = p
-        self.γ = γ
-
-        self.annuity = annuity
-        self.tontine = tontine
-        self.ul_annuity = ul_annuity
-        self.ul_tontine = ul_tontine
+    def __init__(self, ptfl: "Portfolio"):
+        self.ptfl = ptfl
 
     def __call__(self, x: float, y: float, t: float, w: np.ndarray):
-        k = np.arange(0, self.n)
-        p = self.p[self.annuity.t == t]
+        k = np.arange(0, self.ptfl.n)
+        p = self.ptfl.p[self.ptfl.annuity.t == t]
 
         return (
-            self.annuity.c
+            (
+                self.ptfl.v
+                / (
+                    (1 + self.ptfl.annuity.risk_loading)
+                    * np.sum(np.exp(-self.ptfl.annuity.r * t) * p)
+                )
+            )
             * np.sum(
-                binom(self.n - 1, k)
+                binom(self.ptfl.n - 1, k)
                 * (k + 1)
                 * u_prime(
-                    (k + 1) * w[0] * self.annuity.c
-                    + w[1] * self.tontine.d * self.n
-                    + w[2] * x * (k + 1)
-                    + w[3] * y * self.n,
-                    self.γ,
+                    (k + 1) * self.ptfl.annuity.c
+                    + p * self.ptfl.tontine.d * self.ptfl.n
+                    + self.ptfl.ul_annuity.V0 * x * (k + 1)
+                    + self.ptfl.ul_tontine.V0 * p * y * self.ptfl.n,
+                    self.ptfl.γ,
                 )
                 * p**k
-                * (1 - p) ** (self.n - 1 - k)
+                * (1 - p) ** (self.ptfl.n - 1 - k)
             )
-            * self.ul_annuity.psi_dist(t, x)
-            * self.ul_tontine.psi_dist(t, y)
+            * self.ptfl.ul_annuity.psi_dist(t, x)
+            * self.ptfl.ul_tontine.psi_dist(t, y)
         )
 
 
 class dLdw2Integrand:
-    def __init__(
-        self, n: int, p: np.ndarray, γ: float, annuity, tontine, ul_annuity, ul_tontine
-    ):
-        self.n = n
-        self.p = p
-        self.γ = γ
-
-        self.annuity = annuity
-        self.tontine = tontine
-        self.ul_annuity = ul_annuity
-        self.ul_tontine = ul_tontine
+    def __init__(self, ptfl: "Portfolio"):
+        self.ptfl = ptfl
 
     def __call__(self, x: float, y: float, t: float, w: np.ndarray):
-        k = np.arange(0, self.n)
-        p = self.p[self.annuity.t == t]
+        k = np.arange(0, self.ptfl.n)
+        p = self.ptfl.p[self.ptfl.tontine.t == t]
 
         return (
-            self.tontine.d
-            * self.n
+            self.ptfl.n
+            * p
+            * (self.ptfl.v / (1 + self.ptfl.tontine.risk_loading))
+            * (
+                1
+                / (
+                    np.sum(
+                        np.exp(-self.ptfl.r * self.ptfl.t)
+                        * (1 - (1 - self.ptfl.p) ** self.ptfl.n)
+                    )
+                )
+            )
             * np.sum(
-                binom(self.n - 1, k)
+                binom(self.ptfl.n - 1, k)
                 * u_prime(
-                    (k + 1) * w[0] * self.annuity.c
-                    + w[1] * self.tontine.d * self.n
-                    + w[2] * x * (k + 1)
-                    + w[3] * y * self.n,
-                    self.γ,
+                    (k + 1) * self.ptfl.annuity.c
+                    + p * self.ptfl.tontine.d * self.ptfl.n
+                    + self.ptfl.ul_annuity.V0 * x * (k + 1)
+                    + self.ptfl.ul_tontine.V0 * p * y * self.ptfl.n,
+                    self.ptfl.γ,
                 )
                 * p**k
-                * (1 - p) ** (self.n - 1 - k)
+                * (1 - p) ** (self.ptfl.n - 1 - k)
             )
-            * self.ul_annuity.psi_dist(t, x)
-            * self.ul_tontine.psi_dist(t, y)
+            * self.ptfl.ul_annuity.psi_dist(t, x)
+            * self.ptfl.ul_tontine.psi_dist(t, y)
         )
 
 
 class dLdw3Integrand:
-    def __init__(
-        self, n: int, p: np.ndarray, γ: float, annuity, tontine, ul_annuity, ul_tontine
-    ):
-        self.n = n
-        self.p = p
-        self.γ = γ
-
-        self.annuity = annuity
-        self.tontine = tontine
-        self.ul_annuity = ul_annuity
-        self.ul_tontine = ul_tontine
+    def __init__(self, ptfl: "Portfolio"):
+        self.ptfl = ptfl
 
     def __call__(self, x: float, y: float, t: float, w: np.ndarray):
-        k = np.arange(0, self.n)
-        p = self.p[self.annuity.t == t]
+        k = np.arange(0, self.ptfl.n)
+        p = self.ptfl.p[self.ptfl.ul_annuity.t == t]
+
+        factor = self.ptfl.v / (
+            (1 + self.ptfl.ul_annuity.risk_loading) * np.sum(self.ptfl.p)
+        )
 
         return (
-            np.sum(
-                binom(self.n - 1, k)
+            factor
+            * np.sum(
+                binom(self.ptfl.n - 1, k)
                 * (k + 1)
                 * x
                 * u_prime(
-                    (k + 1) * w[0] * self.annuity.c
-                    + w[1] * self.tontine.d * self.n
-                    + w[2] * x * (k + 1)
-                    + w[3] * y * self.n,
-                    self.γ,
+                    (k + 1) * self.ptfl.annuity.c
+                    + p * self.ptfl.tontine.d * self.ptfl.n
+                    + self.ptfl.ul_annuity.V0 * x * (k + 1)
+                    + p * y * self.ptfl.ul_tontine.V0 * self.ptfl.n,
+                    self.ptfl.γ,
                 )
                 * p**k
-                * (1 - p) ** (self.n - 1 - k)
+                * (1 - p) ** (self.ptfl.n - 1 - k)
             )
-            * self.ul_annuity.psi_dist(t, x)
-            * self.ul_tontine.psi_dist(t, y)
+            * self.ptfl.ul_annuity.psi_dist(t, x)
+            * self.ptfl.ul_tontine.psi_dist(t, y)
         )
 
 
 class dLdw4Integrand:
-    def __init__(
-        self, n: int, p: np.ndarray, γ: float, annuity, tontine, ul_annuity, ul_tontine
-    ):
-        self.n = n
-        self.p = p
-        self.γ = γ
-
-        self.annuity = annuity
-        self.tontine = tontine
-        self.ul_annuity = ul_annuity
-        self.ul_tontine = ul_tontine
+    def __init__(self, ptfl: "Portfolio"):
+        self.ptfl = ptfl
 
     def __call__(self, x: float, y: float, t: float, w: np.ndarray):
-        k = np.arange(0, self.n)
-        p = self.p[self.annuity.t == t]
+        k = np.arange(0, self.ptfl.n)
+        p = self.ptfl.p[self.ptfl.ul_tontine.t == t]
+
+        factor = (
+            p
+            * self.ptfl.v
+            / (
+                (1 + self.ptfl.ul_tontine.risk_loading)
+                * np.sum(1 - (1 - self.ptfl.p) ** self.ptfl.n)
+            )
+        )
 
         return (
-            self.n
+            self.ptfl.n
+            * factor
             * np.sum(
-                binom(self.n - 1, k)
-                * x
+                binom(self.ptfl.n - 1, k)
+                * y
                 * u_prime(
-                    (k + 1) * w[0] * self.annuity.c
-                    + w[1] * self.tontine.d * self.n
-                    + w[2] * x * (k + 1)
-                    + w[3] * y * self.n,
-                    self.γ,
+                    (k + 1) * self.ptfl.annuity.c
+                    + p * self.ptfl.tontine.d * self.ptfl.n
+                    + self.ptfl.ul_annuity.V0 * x * (k + 1)
+                    + p * self.ptfl.ul_tontine.V0 * y * self.ptfl.n,
+                    self.ptfl.γ,
                 )
                 * p**k
-                * (1 - p) ** (self.n - 1 - k)
+                * (1 - p) ** (self.ptfl.n - 1 - k)
             )
-            * self.ul_annuity.psi_dist(t, x)
-            * self.ul_tontine.psi_dist(t, y)
+            * self.ptfl.ul_annuity.psi_dist(t, x)
+            * self.ptfl.ul_tontine.psi_dist(t, y)
         )
 
 
@@ -305,7 +294,28 @@ class Portfolio(MortalityMixin, MarketMixin):
         )
 
     def __del__(self) -> None:
-        self.pool.close()
+        if self.pool is not None:
+            self.pool.close()
+
+    def __copy__(self):
+        cls = self.__class__
+        new_obj = cls.__new__(cls)
+
+        for attr, value in self.__dict__.items():
+            if attr != "pool":
+                setattr(new_obj, attr, copy(value))
+
+        new_obj.pool = None
+
+        return new_obj
+
+    def payout(self) -> float:
+        return (
+            self.annuity.expected_payoff()
+            + self.tontine.expected_payoff()
+            + self.ul_annuity.expected_payoff()
+            + self.ul_tontine.expected_payoff()
+        )
 
     def _guard(f: callable) -> callable:
         def guarded(self, w: np.ndarray):
@@ -323,18 +333,12 @@ class Portfolio(MortalityMixin, MarketMixin):
 
     @_guard
     def L(self, w: np.ndarray):
+        context = copy(self)
+
         inner_factors = np.array(
             self.pool.map(
                 DoubleQuadWrapper(
-                    LagrangianIntegrand(
-                        self.n,
-                        self.p,
-                        self.γ,
-                        self.annuity,
-                        self.tontine,
-                        self.ul_annuity,
-                        self.ul_tontine,
-                    ),
+                    LagrangianIntegrand(context),
                     w,
                     self.ul_annuity,
                     self.ul_tontine,
@@ -354,17 +358,11 @@ class Portfolio(MortalityMixin, MarketMixin):
         if np.any(w < 0):
             return LARGE_PENALTY
 
+        context = copy(self)
+
         inner_factors = self.pool.map(
             DoubleQuadWrapper(
-                dLdw1Integrand(
-                    self.n,
-                    self.p,
-                    self.γ,
-                    self.annuity,
-                    self.tontine,
-                    self.ul_annuity,
-                    self.ul_tontine,
-                ),
+                dLdw1Integrand(context),
                 w,
                 self.ul_annuity,
                 self.ul_tontine,
@@ -383,17 +381,11 @@ class Portfolio(MortalityMixin, MarketMixin):
         if np.any(w < 0):
             return LARGE_PENALTY
 
+        context = copy(self)
+
         inner_factors = self.pool.map(
             DoubleQuadWrapper(
-                dLdw2Integrand(
-                    self.n,
-                    self.p,
-                    self.γ,
-                    self.annuity,
-                    self.tontine,
-                    self.ul_annuity,
-                    self.ul_tontine,
-                ),
+                dLdw2Integrand(context),
                 w,
                 self.ul_annuity,
                 self.ul_tontine,
@@ -415,17 +407,11 @@ class Portfolio(MortalityMixin, MarketMixin):
         if np.any(w < 0):
             return LARGE_PENALTY
 
+        context = copy(self)
+
         inner_factors = self.pool.map(
             DoubleQuadWrapper(
-                dLdw3Integrand(
-                    self.n,
-                    self.p,
-                    self.γ,
-                    self.annuity,
-                    self.tontine,
-                    self.ul_annuity,
-                    self.ul_tontine,
-                ),
+                dLdw3Integrand(context),
                 w,
                 self.ul_annuity,
                 self.ul_tontine,
@@ -444,17 +430,11 @@ class Portfolio(MortalityMixin, MarketMixin):
         if np.any(w < 0):
             return LARGE_PENALTY
 
+        context = copy(self)
+
         inner_factors = self.pool.map(
             DoubleQuadWrapper(
-                dLdw4Integrand(
-                    self.n,
-                    self.p,
-                    self.γ,
-                    self.annuity,
-                    self.tontine,
-                    self.ul_annuity,
-                    self.ul_tontine,
-                ),
+                dLdw4Integrand(context),
                 w,
                 self.ul_annuity,
                 self.ul_tontine,
@@ -474,12 +454,12 @@ class Portfolio(MortalityMixin, MarketMixin):
         )
 
     def optimise(self):
-        max_iter = int(1e3)
+        max_iter = int(100)
 
         res = minimize(
             lambda w: -self.L(w),
-            np.array([0.1, 0.1, 0.4, 0.4]),
-            method="cobyqa",
+            np.array([0.4, 0.4, 0.1, 0.1]),
+            method="trust-constr",
             constraints=[
                 LinearConstraint(np.eye(4), np.zeros(4)),
                 LinearConstraint(np.ones((4,)), 1, 1),
@@ -487,7 +467,39 @@ class Portfolio(MortalityMixin, MarketMixin):
             jac=self.dLdw,
             tol=None,
             callback=ProgressCallBack(max_iter),
-            options={"maxiter": max_iter},
+            options={
+                "maxiter": max_iter,
+                "xtol": np.finfo(float).eps,
+                "gtol": np.finfo(float).eps,
+            },
         )
 
+        self.w = res.x
+        self.annuity.prem = self.w[0] * self.v
+        self.tontine.prem = self.w[1] * self.v
+        self.ul_annuity.prem = self.w[2] * self.v
+        self.ul_tontine.prem = self.w[3] * self.v
+
         return res
+
+    def plot(self):
+        plt_df = pd.DataFrame(
+            {
+                "Time": self.t,
+                "Portfolio": self.payout(),
+                "FIA": self.annuity.expected_payoff(),
+                "TTO": self.tontine.expected_payoff(),
+                "UIA": self.ul_annuity.expected_payoff(),
+                "UTO": self.ul_tontine.expected_payoff(),
+            }
+        )
+
+        plt_df = plt_df.melt(
+            id_vars=["Time"],
+            value_vars=["FIA", "TTO", "UIA", "UTO", "Portfolio"],
+            var_name="Instrument",
+            value_name="Payout",
+        )
+
+        plot = sns.lineplot(plt_df, x="Time", y="Payout", hue="Instrument")
+        return plot.get_figure()

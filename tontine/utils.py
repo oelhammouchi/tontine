@@ -2,6 +2,8 @@ import numpy as np
 from scipy.special import binom
 from sympy import Sum, binomial, Symbol, IndexedBase
 
+from .data import MarketData, MortalityData
+
 
 def kappa(n: int, p: np.ndarray, γ: float):
     k = np.arange(n)
@@ -19,6 +21,10 @@ def kappa(n: int, p: np.ndarray, γ: float):
     )
 
     return κ
+
+
+def pi(μ, σ, mort_data: MortalityData, γ: float):
+    return (μ - mort_data.r) / (γ * σ**2) if μ - mort_data.r <= γ * σ**2 else 1
 
 
 def log_normal_pdf(x: float, mu: float, sigma: float) -> float:

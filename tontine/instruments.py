@@ -80,7 +80,7 @@ class Annuity(MortalityMixin, Instrument):
         )
 
     def expected_payoff(self) -> np.ndarray:
-        self.c * self.p
+        return self.c * self.p
 
     def expected_utility(self, γ: float) -> float:
         return self.c ** (1 - γ) * np.sum(np.exp(-self.r * self.t) * self.p) / (1 - γ)
@@ -146,20 +146,14 @@ class UnitLinkedAnnuity(MarketMixin, MortalityMixin, Instrument):
         )
 
     def psi_dist(self, t: float, x: float):
-        mu = (
-            np.log(self.V0)
-            + (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
-        )
+        mu = (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
 
         sigma = self.σ * self.π * np.sqrt(t)
 
         return log_normal_pdf(x, mu, sigma)
 
     def psi_dist_params(self, t: float):
-        mu = (
-            np.log(self.V0)
-            + (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
-        )
+        mu = (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
 
         sigma = self.σ * self.π * np.sqrt(t)
 
@@ -215,20 +209,14 @@ class UnitLinkedTontine(MarketMixin, MortalityMixin, Instrument):
         )
 
     def psi_dist(self, t: float, x: float):
-        mu = (
-            np.log(self.V0)
-            + (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
-        )
+        mu = (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
 
         sigma = self.σ * self.π * np.sqrt(t)
 
         return log_normal_pdf(x, mu, sigma)
 
     def psi_dist_params(self, t: float):
-        mu = (
-            np.log(self.V0)
-            + (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
-        )
+        mu = (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
 
         sigma = self.σ * self.π * np.sqrt(t)
 
