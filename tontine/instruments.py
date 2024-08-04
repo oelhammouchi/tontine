@@ -1,6 +1,5 @@
 import numpy as np
 from abc import ABC, abstractmethod
-from scipy.stats import lognorm
 
 from .data import MortalityData, MarketData
 from .utils import kappa, log_normal_mean, log_normal_std, log_normal_pdf
@@ -145,18 +144,14 @@ class UnitLinkedAnnuity(MarketMixin, MortalityMixin, Instrument):
             / (1 - γ)
         )
 
-    def psi_dist(self, t: float, x: float):
+    def psi_pdf(self, t: float, x: float):
         mu = (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
-
         sigma = self.σ * self.π * np.sqrt(t)
-
         return log_normal_pdf(x, mu, sigma)
 
-    def psi_dist_params(self, t: float):
+    def psi_params(self, t: float):
         mu = (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
-
         sigma = self.σ * self.π * np.sqrt(t)
-
         return log_normal_mean(mu, sigma), log_normal_std(mu, sigma)
 
 
@@ -208,14 +203,14 @@ class UnitLinkedTontine(MarketMixin, MortalityMixin, Instrument):
             / (1 - γ)
         )
 
-    def psi_dist(self, t: float, x: float):
+    def psi_pdf(self, t: float, x: float):
         mu = (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
 
         sigma = self.σ * self.π * np.sqrt(t)
 
         return log_normal_pdf(x, mu, sigma)
 
-    def psi_dist_params(self, t: float):
+    def psi_params(self, t: float):
         mu = (self.r + (self.μ - self.r) * self.π - 0.5 * self.σ**2 * self.π**2) * t
 
         sigma = self.σ * self.π * np.sqrt(t)
