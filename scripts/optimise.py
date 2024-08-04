@@ -17,26 +17,39 @@ if __name__ == "__main__":
     mkt_data = MarketData(0.08, 0.10, 0.5)
 
     risk_loadings = {
-        "annuity": 0,
-        "tontine": 0,
-        "ul_tontine": 0,
-        "ul_annuity": 0,
+        "annuity": 0.05,
+        "tontine": 0.02,
+        "ul_tontine": 0.02,
+        "ul_annuity": 0.05,
     }
 
     μ = 0.08
     σ = 0.1
 
-    risk_aversions = [-1.5, 0, 1.5]  # risk-seeking, risk-neutral, risk-averse
+    risk_aversions = [
+        -1.0,
+        -0.5,
+        0.0,
+        0.5,
+        1.0,
+    ]  # risk-seeking, risk-neutral, risk-averse
 
-    fig, axs = plt.subplots(2, 2, sharey=True)
+    fig, axs = plt.subplots(3, 2, sharey=True)
+    results = []
 
     for i, γ in enumerate(risk_aversions):
         π = pi(μ, σ, mort_data, γ)
         mkt_data = MarketData(μ, σ, π)
         ptfl = Portfolio(1e5, 100, γ, risk_loadings, mkt_data, mort_data)
 
-        res = ptfl.optimise(progress=False)
+        res = ptfl.optimise(progress=True)
+        results.append((γ,) + tuple(ptfl.w))
 
-        ptfl.plot(ax=axs.reshape(-1)[i])
+        ax = axs.reshape(-1)[i]
+        ptfl.plot(ax=ax)
+        ax.set_title(f"γ = {γ}")
 
     plt.show()
+
+    results = pd.DataFrame(results, columns=["γ", "w1", "w2", "w3", "w4"])
+    results.to_csv("output/results.csv")

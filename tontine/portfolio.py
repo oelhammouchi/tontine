@@ -38,10 +38,9 @@ class ProgressCallBack:
         self.ctr = 0
 
     def __call__(self, intermediate_result: OptimizeResult):
-        self.tqdm.update()
-        self.ctr += 1
-        # if self.ctr >= self.n_iter:
-        #     raise StopIteration
+        if multiprocessing.current_process().name == "ForkPoolWorker-1":
+            self.tqdm.update()
+            self.ctr += 1
 
 
 class MinimiseHelper:
@@ -405,9 +404,6 @@ class Portfolio(MortalityMixin, MarketMixin):
         self.ul_tontine.prem = self.v * w[3]
 
         jac = np.array([self._dLdw1(), self._dLdw2(), self._dLdw3(), self._dLdw4()])
-
-        print(f"Weights: {w}")
-        print(f"Jacobian: {jac}")
 
         return jac
 
