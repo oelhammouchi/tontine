@@ -33,14 +33,12 @@ def u_prime(c, γ):
 
 class ProgressCallBack:
     def __init__(self, n_iter: int, show: bool):
-        self.tqdm = tqdm(total=n_iter, disable=not show)
-        self.n_iter = n_iter
-        self.ctr = 0
+        if multiprocessing.current_process().name == "ForkPoolWorker-1":
+            self.tqdm = tqdm(total=n_iter, disable=not show)
 
     def __call__(self, intermediate_result: OptimizeResult):
         if multiprocessing.current_process().name == "ForkPoolWorker-1":
             self.tqdm.update()
-            self.ctr += 1
 
 
 class MinimiseHelper:
@@ -62,7 +60,7 @@ class MinimiseHelper:
             options={"maxiter": max_iter},
         )
 
-        return res.x, res.fun
+        return res.x, res.fun, res.constr_violation
 
 
 class LagrangianIntegrand:
@@ -286,18 +284,6 @@ class Portfolio(MortalityMixin, MarketMixin):
             mkt_data=self.mkt_data,
         )
 
-    # def __copy__(self):
-    #     cls = self.__class__
-    #     new_obj = cls.__new__(cls)
-
-    #     for attr, value in self.__dict__.items():
-    #         if attr != "pool":
-    #             setattr(new_obj, attr, copy(value))
-
-    #     new_obj.pool = None
-
-    #     return new_obj
-
     def payout(self) -> float:
         return (
             self.annuity.expected_payoff()
@@ -405,13 +391,16 @@ class Portfolio(MortalityMixin, MarketMixin):
 
         jac = np.array([self._dLdw1(), self._dLdw2(), self._dLdw3(), self._dLdw4()])
 
+        print(f"Weights: {w}")
+        print(f"Jacobian: {jac}")
+
         return jac
 
     def optimise(self, progress=True):
         pool = multiprocessing.Pool(3 * multiprocessing.cpu_count() // 4)
         max_iter = int(100)
 
-        candidates = np.random.dirichlet(np.ones(4), 10)
+        candidates = np.random.dirichlet(np.ones(4), 15)
         minimiser = MinimiseHelper(self)
 
         results = list(
@@ -420,9 +409,11 @@ class Portfolio(MortalityMixin, MarketMixin):
             )
         )
 
-        scores = [res[1] for res in results]
+        scores = np.array([res[1] for res in results])
         weights = [res[0] for res in results]
-        w = weights[np.array(scores).argmin()]
+        cvs = np.array([res[2] for res in results])
+
+        w = weights[scores[np.abs(cvs) <= 0.1].argmin()]
 
         self.w = w
         self.annuity.prem = self.w[0] * self.v

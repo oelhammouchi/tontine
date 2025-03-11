@@ -42,14 +42,15 @@ if __name__ == "__main__":
         mkt_data = MarketData(μ, σ, π)
         ptfl = Portfolio(1e5, 100, γ, risk_loadings, mkt_data, mort_data)
 
-        res = ptfl.optimise(progress=True)
+        res = ptfl.optimise(progress=False)
         results.append((γ,) + tuple(ptfl.w))
 
         ax = axs.reshape(-1)[i]
         ptfl.plot(ax=ax)
         ax.set_title(f"γ = {γ}")
 
-    plt.show()
-
     results = pd.DataFrame(results, columns=["γ", "w1", "w2", "w3", "w4"])
     results.to_csv("output/results.csv")
+
+    fig.savefig("output/scenario_analyis.svg")
+    plt.show()
